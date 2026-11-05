@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Album Studio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='7' width='22' height='18' rx='3' fill='%23b45309'/><rect x='7' y='3' width='22' height='18' rx='3' fill='%23f59e0b'/></svg>">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" id="brand">
+      <span class="logo" aria-hidden="true"></span>Album Studio
+    </a>
+    <div class="project-label" id="project-label"></div>
+    <button class="btn ghost" id="change-folder" hidden>Open another folder</button>
+  </header>
+
+  <main id="screen"></main>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lb-close" aria-label="Close (Esc)">&times;</button>
+    <button class="lb-action" hidden></button>
+    <button class="lb-nav lb-prev" aria-label="Previous photo (←)">&#8249;</button>
+    <figure>
+      <img alt="">
+      <figcaption></figcaption>
+    </figure>
+    <button class="lb-nav lb-next" aria-label="Next photo (→)">&#8250;</button>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+flask
+numpy
+pillow
+open_clip_torch
+torchvision
+# optional, only needed for iPhone .HEIC photos:
+# pillow-heif
