@@ -1,0 +1,47 @@
+{# Step 1: one group opened to see all its photos, best first. Data from GroupSimilarStep.stack_page(). #}
+{% extends "workspace.html" %}
+{% block title %}{{ photos|length }} similar photos · Album Studio{% endblock %}
+{% block step %}
+{% set main_page = url_for('step_page', step_id=step.id) %}
+<div class="step-head">
+  <a class="back-link" href="{{ main_page }}#g-{{ key }}">← All groups</a>
+  <h1>{{ photos|length }} similar photos</h1>
+  <p>{{ subtitle }}{% if hidden_here %} · {{ hidden_here }} bad photos hidden{% endif %}</p>
+</div>
+
+<form id="stack-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}">
+  <input type="hidden" name="back" value="{{ here }}">
+  <div class="sheet-tools">
+    <button class="btn" data-needs-ticks
+            formaction="{{ url_for('step_action', step_id=step.id, action='split', back=main_page) }}">Move ticked photos to a new group</button>
+    <button class="btn" data-needs-ticks
+            formaction="{{ url_for('step_action', step_id=step.id, action='ungroup', back=main_page) }}">Make ticked photos single</button>
+    <span class="hint">Best photos first · click a photo to see it large · tick photos that don't belong here · “Hide” bad photos</span>
+  </div>
+  <div class="grid">
+    {% for p in photos %}
+      <div class="card {{ 'rejected' if p.rejected }}">
+        <input type="checkbox" class="pick" name="ticked" value="{{ p.id }}" id="tick-{{ p.id }}">
+        <label class="check" for="tick-{{ p.id }}" title="Tick">✓</label>
+        <a class="open view" data-list="stack" href="{{ url_for('photo', i=p.id) }}" data-id="{{ p.id }}"
+           data-caption="{{ p.caption }}" data-rejected="{{ 1 if p.rejected else 0 }}">
+          <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=p.id) }}" alt=""></div>
+            {% if loop.first %}<span class="badge">Best quality</span>{% endif %}</div>
+        </a>
+        <div class="meta">
+          <span>{{ p.seconds }} · {{ p.megapixels }} MP</span>
+          {% if p.rejected %}
+            <button class="btn small reject on" name="photo" value="{{ p.id }}" title="Show this photo again">Hidden</button>
+          {% else %}
+            <button class="btn small reject" name="photo" value="{{ p.id }}" title="Hide this photo (a bad photo the checks missed)">Hide</button>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</form>
+
+<form id="hide-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+{% endblock %}

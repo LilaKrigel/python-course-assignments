@@ -1,0 +1,14 @@
+{# Page for a step that is designed but not built yet. #}
+{% extends "workspace.html" %}
+{% block step %}
+<div class="step-head">
+  <div class="eyebrow">Step {{ number }}</div>
+  <h1>{{ step.title }}</h1>
+</div>
+<div class="panel planned-box">
+  <span class="tag">Coming soon</span>
+  <p>{{ step.description }}</p>
+  <p class="hint">This step is planned but not built yet.</p>
+  <a class="btn" href="{{ url_for('step_page', step_id='group') }}">← Back to step 1</a>
+</div>
+{% endblock %}

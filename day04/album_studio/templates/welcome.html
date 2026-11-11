@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="welcome">
+  <h1>Make an album from your photos</h1>
+  <p class="lead">Choose a folder, for example a whole trip. Album Studio guides you step by step:
+    it stacks similar photos, picks the best ones and helps you choose what goes into the album.
+    Your original photos are never changed.</p>
+  <div class="open-card">
+    <form method="post" action="{{ url_for('pick_folder') }}">
+      <button class="btn primary big">Choose photo folder…</button>
+      <span class="hint pick-hint">A folder window opens (it may be behind this one).</span>
+    </form>
+    <div class="or">or paste the folder path</div>
+    <form class="open-row" method="post" action="{{ url_for('open_folder') }}">
+      <input type="text" name="folder" placeholder="C:\Users\me\Pictures\Africa 2025" autocomplete="off" required>
+      <button class="btn">Open</button>
+    </form>
+    {% if recent %}
+      <form class="recent" method="post" action="{{ url_for('open_folder') }}">
+        <h3>Recent folders</h3>
+        {% for folder in recent %}
+          <button name="folder" value="{{ folder }}">
+            <span class="folder-name">{{ folder.replace('\\', '/').rstrip('/').split('/')[-1] }}</span>
+            <span class="folder-path">{{ folder }}</span>
+          </button>
+        {% endfor %}
+      </form>
+    {% endif %}
+  </div>
+  <div class="journey">
+    <h3>The steps</h3>
+    <ol>
+      {% for step in steps %}<li><b>{{ loop.index }}. {{ step.title }}</b><span>{{ step.tagline }}</span></li>{% endfor %}
+    </ol>
+  </div>
+</div>
+{% endblock %}

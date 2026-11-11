@@ -1,0 +1,115 @@
+{# Step 1: settings for grouping, all groups by day, merging groups. Data from GroupSimilarStep.main_page(). #}
+{% extends "workspace.html" %}
+{% block step %}
+<div class="step-head">
+  <div class="eyebrow">Step {{ number }}</div>
+  <h1>{{ step.title }}</h1>
+  <p>{{ step.description }}</p>
+</div>
+
+{# Changing a setting sends the form at once (app.js); without JavaScript, use the button #}
+<form class="panel controls" method="post" action="{{ url_for('step_action', step_id=step.id, action='regroup') }}"
+      data-autosubmit {% if edited %}data-confirm="Re-grouping replaces the changes you made by hand. Continue?"{% endif %}>
+  <input type="hidden" name="back" value="{{ here }}">
+  <div class="control">
+    <label for="sim">How similar must photos be? <output id="sim-out">{{ similarity_label }}</output></label>
+    <input type="range" id="sim" name="similarity" min="0.80" max="0.98" step="0.01"
+           value="{{ settings.similarity }}" data-percent="sim-out">
+    <div class="range-labels"><span>Looser: bigger groups</span><span>Stricter: only near-identical</span></div>
+  </div>
+  <div class="control">
+    <span class="label">Taken within</span>
+    <div class="segmented" role="radiogroup" aria-label="Taken within">
+      {% for seconds, label in time_options %}
+        <label><input type="radio" name="seconds" value="{{ 'any' if seconds is none else seconds }}"
+               {% if settings.seconds == seconds %}checked{% endif %}><span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="hint">A burst is taken seconds apart. "Any time" also stacks the same view shot hours later.</div>
+  </div>
+  <noscript><button class="btn">Regroup</button></noscript>
+</form>
+
+<div class="stats">
+  <div class="stat"><b>{{ stats.photos }}</b><span>photos{% if stats.hidden %} ({{ stats.hidden }} hidden){% endif %}</span></div>
+  <div class="stat arrow">→</div>
+  <div class="stat"><b>{{ stats.groups }}</b><span>groups</span></div>
+  <div class="stat"><b>{{ stats.stacks }}</b><span>stacks of similar photos</span></div>
+  <div class="stat"><b>{{ stats.singles }}</b><span>single photos</span></div>
+  <div class="stat"><b>{{ stats.tucked_away }}</b><span>near-duplicates tucked away</span></div>
+  {% if edited %}
+    <form class="edited-note" method="post" action="{{ url_for('step_action', step_id=step.id, action='undo_edits') }}"
+          data-confirm="Undo all changes you made by hand?">
+      <input type="hidden" name="back" value="{{ here }}">
+      Includes your changes by hand · <button class="link">undo them</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="toolbar">
+  <nav class="tabs" aria-label="Show">
+    {% for value, label in show_options %}
+      <a href="{{ url_for('step_page', step_id=step.id, show=value) }}" class="{{ 'on' if value == show }}"
+         {% if value == show %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <form class="filter-toggle" method="post" action="{{ url_for('step_action', step_id=step.id, action='hide_problems') }}" data-autosubmit>
+    <input type="hidden" name="back" value="{{ here }}">
+    <input type="hidden" name="hide" value="0">
+    <label class="switch"><input type="checkbox" name="hide" value="1" role="switch" {% if hide_problems %}checked{% endif %}>
+      Hide blurry and bad photos</label>
+    <span class="hint">
+      {% if bad_count %}{{ bad_count }} {{ 'hidden' if hide_problems else 'found' }} ·
+        <a href="{{ url_for('step_page', step_id=step.id, view='review') }}">review</a>
+      {% else %}none found{% endif %}
+    </span>
+    <noscript><button class="btn small">Apply</button></noscript>
+  </form>
+  <label class="size-control">Size <input type="range" id="size" min="120" max="340" step="10" value="180"></label>
+</div>
+
+{# Ticking groups (circle in the corner) and "Merge" sends this form #}
+<form id="merge-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='merge') }}">
+  <input type="hidden" name="back" value="{{ here }}">
+  {% for day in days %}
+    <div class="day"><h2>{{ day.title }}</h2><span>{{ day.groups|length }} groups · {{ day.photo_count }} photos</span></div>
+    <div class="grid">
+      {% for g in day.groups %}
+        {% set n = g.photos|length %}
+        <div class="card {{ 'stack' if n > 1 }}" id="g-{{ g.key }}">
+          <input type="checkbox" class="pick" name="group" value="{{ g.key }}" id="pick-{{ g.key }}">
+          <label class="check" for="pick-{{ g.key }}" title="Select (to merge groups)">✓</label>
+          <label class="pick-cover" for="pick-{{ g.key }}" aria-hidden="true"></label>
+          {% if n > 1 %}
+            <a class="open" href="{{ url_for('step_page', step_id=step.id, view='stack/' ~ g.key) }}" aria-label="Open {{ n }} similar photos">
+          {% else %}
+            <a class="open view" data-list="singles" href="{{ url_for('photo', i=g.cover.id) }}" data-id="{{ g.cover.id }}"
+               data-caption="{{ g.cover.caption }}" data-rejected="{{ 1 if g.cover.rejected else 0 }}">
+          {% endif %}
+            <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=g.cover.id) }}" alt=""></div>
+              {% if n > 1 %}<span class="count">{{ n }} photos</span>{% endif %}</div>
+            <div class="meta"><span>{{ g.time_span }}</span></div>
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No {{ 'stacks' if show == 'stacks' else 'single photos' if show == 'singles' else 'photos' }} with these settings.</div>
+  {% endfor %}
+  <div class="action-bar merge-bar">
+    <span class="merge-count"></span>
+    <button class="btn" type="reset">Clear</button>
+    <button class="btn primary">Merge into one group</button>
+  </div>
+</form>
+
+<form class="step-foot" method="post" action="{{ url_for('step_action', step_id=step.id, action='complete') }}">
+  <span>{{ stats.photos }} photos are now {{ stats.groups }} groups. Happy with them?</span>
+  <button class="btn primary">{% if next_step %}Next: {{ next_step.title }} →{% else %}Finish{% endif %}</button>
+</form>
+
+{# Used by the photo viewer's "Hide" (H) button #}
+<form id="hide-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+{% endblock %}

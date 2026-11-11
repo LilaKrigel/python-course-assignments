@@ -1,0 +1,40 @@
+{# Step 1: all photos flagged as bad, to keep any that are fine after all. Data from GroupSimilarStep.review_page(). #}
+{% extends "workspace.html" %}
+{% block title %}Blurry and bad photos · Album Studio{% endblock %}
+{% block step %}
+<div class="step-head">
+  <a class="back-link" href="{{ url_for('step_page', step_id=step.id) }}">← All groups</a>
+  <h1>Blurry and bad photos</h1>
+  <p>{{ photos|length }} photos · hidden while the switch is on, unless you keep them</p>
+</div>
+<p class="hint">Click a photo to see it large · “Keep” and “Show again” show a photo again if it is fine after all</p>
+
+<form method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_keep') }}">
+  <input type="hidden" name="back" value="{{ here }}">
+  <div class="grid">
+    {% for p in photos %}
+      <div class="card" id="p-{{ p.id }}">
+        <a class="open view" data-list="review" href="{{ url_for('photo', i=p.id) }}" data-id="{{ p.id }}" data-caption="{{ p.caption }}">
+          <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=p.id) }}" alt=""></div>
+            <span class="badge warn">{{ p.flag }}</span></div>
+        </a>
+        <div class="meta">
+          <span>{{ p.file }}</span>
+          {% if p.problem %}{# found by the checks #}
+            <button class="btn small keep {{ 'on' if p.kept }}" name="photo" value="{{ p.id }}">{{ '✓ Kept' if p.kept else 'Keep' }}</button>
+          {% else %}{# hidden by the user #}
+            <button class="btn small keep {{ 'on' if not p.rejected }}" name="photo" value="{{ p.id }}"
+                    formaction="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}">{{ '✓ Shown' if not p.rejected else 'Show again' }}</button>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</form>
+
+{% if broken %}
+  <h3 class="sheet-section">Couldn't be opened ({{ broken|length }})</h3>
+  <p class="hint">These files may be damaged or are not photos. They are never shown.</p>
+  <ul class="broken-list">{% for f in broken %}<li>{{ f }}</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

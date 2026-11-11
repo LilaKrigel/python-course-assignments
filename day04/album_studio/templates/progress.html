@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block head %}<meta http-equiv="refresh" content="1">{% endblock %}
+{% block title %}Analysing photos · Album Studio{% endblock %}
+{% block content %}
+<div class="progress-screen">
+  <h2>Getting to know your photos</h2>
+  <p>Every photo is read once to measure its sharpness and understand what it shows.
+    Next time, this folder opens instantly.</p>
+  {% if job.total %}
+    <div class="bar"><div style="width: {{ (100 * job.done / job.total)|round(1) }}%"></div></div>
+  {% else %}
+    <div class="bar indeterminate"><div></div></div>
+  {% endif %}
+  <div class="progress-detail">
+    <span>{{ job.message }}</span>
+    <span>{% if job.eta %}about {{ job.eta|duration }} left{% endif %}</span>
+  </div>
+</div>
+{% endblock %}

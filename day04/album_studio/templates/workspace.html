@@ -1,0 +1,26 @@
+{# The workspace: the steps on the left, the current step's page on the right.
+   Each step's template extends this one and fills in the "step" block. #}
+{% extends "layout.html" %}
+{% block title %}{{ step.title }} · Album Studio{% endblock %}
+{% block content %}
+<div class="workspace">
+  <nav class="steps-nav">
+    <h3>Your album</h3>
+    <ol>
+      {% for s in steps %}
+        <li>
+          <a class="step-link {{ 'current' if s.id == step.id }} {{ 'done' if s.done }} {{ 'planned' if s.planned }}"
+             href="{{ url_for('step_page', step_id=s.id) }}" {% if s.id == step.id %}aria-current="page"{% endif %}>
+            <span class="step-num">{{ '✓' if s.done else loop.index }}</span>
+            <span class="step-text"><b>{{ s.title }}{% if s.planned %}<span class="soon">soon</span>{% endif %}</b>
+              <small>{{ s.summary }}</small></span>
+          </a>
+        </li>
+      {% endfor %}
+    </ol>
+  </nav>
+  <section class="step-page">
+    {% block step %}{% endblock %}
+  </section>
+</div>
+{% endblock %}
