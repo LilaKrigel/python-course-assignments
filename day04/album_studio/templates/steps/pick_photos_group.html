@@ -1,0 +1,106 @@
+{# Step 2: one group opened, to choose its photos and, when needed, correct its subject.
+   Data from PickPhotosStep.group_page(). Same calm cards as the main page: the photo, one caption
+   line, and the two actions on hover. Correcting the subject is rare, so its form is folded away. #}
+{% extends "workspace.html" %}
+{% import "icons.html" as icon %}
+{% block title %}{{ subject_label }} · {{ photos|length }} photos · Album Studio{% endblock %}
+{% block step %}
+<div class="step-head compact">
+  {# Back to the list, and on to the groups before and after this one (same filter and order) #}
+  <nav class="group-nav" aria-label="Groups">
+    <a class="back-link" href="{{ main_link }}">← All groups</a>
+    <span class="group-steps">
+      {% if prev_link %}<a class="btn small" rel="prev" href="{{ prev_link }}" data-group-nav>← Previous</a>{% endif %}
+      {% if position %}<span class="hint">{{ position }} of {{ count }}</span>{% endif %}
+      {% if next_link %}<a class="btn small" rel="next" href="{{ next_link }}" data-group-nav>Next →</a>{% endif %}
+    </span>
+  </nav>
+  {% if only %}
+    <h1>{{ only }} <span class="h1-note">{{ photos|length }} of {{ total }} photos</span></h1>
+    <p>{{ subtitle }} · the group is mostly {{ subject_label }} · <a href="{{ all_link }}">show all {{ total }}</a></p>
+  {% else %}
+    <h1>{{ subject_label }} <span class="h1-note">{{ total }} photo{{ 's' if total != 1 }}</span></h1>
+    <p>{{ subtitle }}{% if picked %} · ♥ {{ picked }} picked{% endif %}
+      {%- if hidden %} · {{ hidden }} hidden{% endif %}
+      {%- if minor %} · also {% for name, n in minor %}{{ name }} ({{ n }}){{ ", " if not loop.last }}{% endfor %}{% endif %}</p>
+  {% endif %}
+  <details class="subject-edit" {% if corrected %}open{% endif %}>
+    <summary>{{ 'Subject corrected by you' if corrected else 'Wrong subject? Change it' }}</summary>
+    <form class="subject-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='set_subject') }}" data-autosubmit>
+      <input type="hidden" name="back" value="{{ here }}">
+      <input type="hidden" name="group" value="{{ key }}">
+      <label class="field">
+        <span class="label">What is in these photos?</span>
+        <select name="subject">
+          <option value="" {% if not corrected %}selected{% endif %}>As recognised: {{ recognised_label }}</option>
+          <optgroup label="Animals">
+            {% for value, name in animal_options %}
+              <option value="{{ value }}" {% if corrected and value == subject %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Not animals">
+            {% for value, name in other_options %}
+              <option value="{{ value }}" {% if corrected and value == subject %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </label>
+      <label class="field">
+        <span class="label">or an animal that is not in the list</span>
+        <span class="field-row">
+          <input type="text" name="custom" maxlength="40" placeholder="e.g. dung beetle" autocomplete="off">
+          <button class="btn">Save</button>
+        </span>
+      </label>
+      <p class="hint">The subject applies to all photos of this group.</p>
+    </form>
+  </details>
+</div>
+
+{% set shown = photos|rejectattr('hidden')|list|length %}
+<form id="pick-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_pick') }}">
+  <input type="hidden" name="back" value="{{ here }}">
+  <div class="grid">
+    {% for p in photos %}
+      <div class="card pick-card {{ 'is-picked' if p.picked }} {{ 'dismissed' if p.hidden }}">
+        <a class="open view" data-list="group" href="{{ url_for('photo', i=p.id) }}" data-id="{{ p.id }}"
+           data-caption="{{ p.caption }}" data-hidden="{{ 1 if p.hidden else 0 }}"
+           {%- if not p.hidden %} data-picked="{{ 1 if p.picked else 0 }}"{% endif %}
+           {%- if shown == 1 and not p.hidden %} data-last="1"{% endif %}>
+          <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=p.id) }}" alt=""></div></div>
+        </a>
+        {# hiding the last photo shown goes on to the next group (or back to all groups) #}
+        {% set hide_action = url_for('step_action', step_id=step.id, action='hide', back=(next_link or main_page) if shown == 1 and not p.hidden else none) %}
+        <div class="card-actions">
+          {% if p.hidden %}
+            <button class="pill-btn" name="photo" value="{{ p.id }}" formaction="{{ hide_action }}">Show again</button>
+          {% else %}
+            <button class="act-btn hide-btn" name="photo" value="{{ p.id }}" formaction="{{ hide_action }}"
+                    title="Hide this photo (you can undo it)" aria-label="Hide">{{ icon.hide() }}</button>
+            <button class="heart act-btn {{ 'on' if p.picked }}" name="photo" value="{{ p.id }}"
+                    aria-pressed="{{ 'true' if p.picked else 'false' }}"
+                    aria-label="{{ 'Remove from the album' if p.picked else 'Pick' }}"
+                    title="{{ 'Picked · click to remove from the album' if p.picked else 'Pick this photo' }}">{{ icon.heart(p.picked) }}</button>
+          {% endif %}
+        </div>
+        <div class="caption">
+          <span class="time">{{ p.seconds }}</span>
+          {% if p.tag %}<span class="subject-name animals">{{ p.tag }}</span>{% endif %}
+          {% if p.soft %}<span class="soft-note" title="Looks soft when seen large (Z in the viewer to check)">soft</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</form>
+
+{# The photo viewer's buttons and keys: P picks the shown photo, H hides it #}
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_pick') }}"
+      data-key="p" data-flag="picked" data-label-on="♥ Picked · remove" data-label-off="♡ Pick" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id=step.id, action='hide') }}"
+      data-key="h" data-flag="hidden" data-label-on="Hidden · show again" data-label-off="Hide"
+      data-back-last="{{ next_link ~ '#view-first' if next_link else main_page }}" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+{% endblock %}

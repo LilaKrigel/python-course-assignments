@@ -13,6 +13,11 @@ TIME_OPTIONS = [(30, "30 s"), (120, "2 min"), (600, "10 min"), (3600, "1 hour"),
 PROBLEM_LABELS = {"blurry": "Blurry", "blank": "Too dark or bright", "dark": "Too dark",
                   "unfocused": "Out of focus", "overexposed": "Overexposed"}
 SHOW_OPTIONS = [("all", "All"), ("stacks", "Stacks"), ("singles", "Single photos")]
+# Groups bigger than this mix different moments and animals: step 2 shows them as one card with
+# one subject. The warning suggests at least STRICTER (88% within 2 minutes made the largest
+# group 67 photos instead of 118 on the trip photos, 92% made it 52).
+LARGE_GROUP = 30
+STRICTER = {"similarity": 0.88, "seconds": 120}
 
 
 def group_photos(embeddings, taken, similarity, max_gap):
@@ -197,11 +202,21 @@ class GroupSimilarStep(Step):
 
         bad = sum(1 for i in range(len(lib)) if lib.problem(i) and i not in kept or i in rejected)
         settings = state["settings"]
+        large = sorted((len(g["photos"]) for g in shown if len(g["photos"]) > LARGE_GROUP), reverse=True)
+        seconds = settings["seconds"]
+        stricter = {"similarity": max(settings["similarity"], STRICTER["similarity"]),
+                    "seconds": STRICTER["seconds"] if seconds is None or seconds > STRICTER["seconds"] else seconds}
         return self.template, {
             "settings": settings, "similarity_label": similarity_label(settings["similarity"]),
             "time_options": TIME_OPTIONS, "show_options": SHOW_OPTIONS, "show": show,
             "edited": state.get("edited", False), "hide_problems": state.get("hide_problems", True),
             "bad_count": bad + len(lib.broken), "days": days,
+            "large": {"count": len(large), "largest": large[0] if large else 0,
+                      "photos": sum(large), "share": round(100 * sum(large) / max(photo_count, 1)),
+                      "limit": LARGE_GROUP, "stricter": stricter,
+                      "stricter_label": f"{round(stricter['similarity'] * 100)}% within "
+                                        + dict(TIME_OPTIONS)[stricter["seconds"]],
+                      "can_be_stricter": stricter != settings} if large else None,
             "stats": {"photos": photo_count, "hidden": len(lib) - photo_count, "groups": len(shown),
                       "stacks": stacks, "singles": len(shown) - stacks, "tucked_away": photo_count - len(shown)},
         }
@@ -275,8 +290,9 @@ class GroupSimilarStep(Step):
             if not ticked or len(ticked) >= len(group):
                 raise ValueError("Tick some of the photos, but not all of them.")
             self.action(project, name, {"photos": ticked})
-            return (f"Moved {len(ticked)} photos to a new group" if name == "split"
-                    else f"{len(ticked)} photos are now single")
+            n = f"{len(ticked)} photos" if len(ticked) > 1 else "1 photo"
+            return (f"Moved {n} to a new group" if name == "split"
+                    else f"{n} {'are' if len(ticked) > 1 else 'is'} now single")
         return super().form_action(project, name, form)
 
 

@@ -49,10 +49,17 @@ TOO_DARK_BELOW = 50
 # stripes) reached 0.595, small distant animals look softer anyway. Mildly soft subjects score
 # like sharp ones and are not caught.
 FOCUS_LIMITS = [(0.05, 0.60), (0.01, 0.52), (0.0, 0.64)]
+SOFT_TILE = 128  # tile size (pixels at half size) for the softness measure
+# Looks soft when seen large: shown as a hint in step 2, never hidden. Checked on close-ups of the
+# 2046 trip photos: up to 0.40 they were sharp, above 0.44 most were clearly soft (the blurred
+# warthogs _MG_1170/1171: 0.463/0.448). 26 photos are above it. Close-ups of zebras can score high
+# while sharp (wide smooth stripes have little fine detail), so it is a hint only.
+SOFT_ABOVE = 0.44
 FIELDS = ["embedding", "sharpness", "clipped", "pixels", "taken", "pale_flat", "rest_colour", "brightest",
           "blur"]
-# Slow to measure (about 2 s per photo), so saved while still incomplete; NOT_CHECKED marks the rest
-FOCUS_FIELDS = ["subject_area", "subject_blur"]
+# Slow to measure (focus about 2 s per photo, softness 0.35 s), so saved while still incomplete;
+# NOT_CHECKED marks the rest
+SLOW_FIELDS = ["subject_area", "subject_blur", "softness"]
 NOT_CHECKED = -1.0
 
 # The large model is much better at telling similar animals apart than ViT-B-32
@@ -75,7 +82,7 @@ class Library:
         self.broken = list(broken)  # files that could not be opened (damaged or not photos)
         self.keys = [keys[i] for i in order]
         self.files = [k.split("|")[0] for k in self.keys]  # path relative to the folder
-        for field in FIELDS + FOCUS_FIELDS:
+        for field in FIELDS + SLOW_FIELDS:
             setattr(self, field, data[field][order])
         # Quality 0..1: sharpness matters most, resolution second, blown-out areas cost points
         self.quality = (0.7 * rank01(np.log1p(self.sharpness)) + 0.3 * rank01(self.pixels)
@@ -89,6 +96,10 @@ class Library:
 
     def thumb_path(self, i):
         return thumb_path(self.folder, self.keys[i])
+
+    def is_soft(self, i):
+        """The photo looks soft when seen large (a hint; soft photos are not hidden)."""
+        return bool(self.softness[i] > SOFT_ABOVE)  # NaN and NOT_CHECKED (-1) never are
 
     def problem(self, i):
         """Why photo i is not worth showing: "blank", "dark", "blurry", "unfocused", "overexposed",
@@ -213,6 +224,38 @@ def reblur(gray, mask):
     return max(result)
 
 
+def softness_metric(path):
+    """How soft the sharpest parts of the photo are, 0 (sharp) .. 1 (blurry), measured at half
+    size. At the 1024-pixel size of the other checks a slightly soft photo still looks sharp (a
+    blur a few pixels wide disappears), and at full size camera noise looks like detail.
+    The photo is cut into tiles; flat tiles (sky, water) are skipped, and the sharpest 10% count."""
+    with Image.open(path) as img:
+        img.draft("L", (img.width // 2, img.height // 2))  # JPEG: decoded at half size directly
+        gray = img.convert("L")
+        if max(gray.size) > 2900:  # not a JPEG (no draft): halve it here
+            gray = gray.reduce(2)
+        gray = np.asarray(gray, dtype=np.float32)
+    t = SOFT_TILE
+    h, w = (gray.shape[0] // t) * t, (gray.shape[1] // t) * t
+    if not h or not w:
+        return np.nan
+    gray = gray[:h, :w]
+
+    def per_tile(a):
+        return a.reshape(h // t, t, w // t, t).sum(axis=(1, 3))
+
+    kept = []
+    for axis in (0, 1):  # the re-blur measure (see reblur()), for every tile at once
+        detail = np.abs(np.diff(gray, axis=axis))
+        left = np.abs(np.diff(box_mean9(gray, axis), axis=axis))
+        pad = [(0, 1), (0, 0)] if axis == 0 else [(0, 0), (0, 1)]
+        total, lost = per_tile(np.pad(detail, pad)), per_tile(np.pad(np.maximum(0, detail - left), pad))
+        kept.append((total - lost) / np.maximum(total, 1e-6))
+    tile_blur = np.maximum(*kept)
+    textured = gray.reshape(h // t, t, w // t, t).std(axis=(1, 3)) > 8
+    return float(np.percentile(tile_blur[textured], 10)) if textured.any() else np.nan
+
+
 def focus_metrics(img, mask):
     """Return (share of the photo covered by the subject, blur of the subject or NaN)."""
     if mask is None:
@@ -261,6 +304,11 @@ class Clip:
             emb = normalize(self.model.encode_text(self.tokenizer(prompts)).numpy())
         return normalize(emb.mean(axis=0, keepdims=True))[0]
 
+    def embed_prompts(self, prompts):
+        """One embedding per prompt (rows), e.g. to cache them one by one."""
+        with self.torch.no_grad():
+            return normalize(self.model.encode_text(self.tokenizer(prompts)).numpy())
+
     def blur_scores(self, embeddings):
         """How much more each photo looks blurry than sharp (compared with LOOKS_BLURRY_ABOVE)."""
         return embeddings @ (self.embed_text(BLURRY_PROMPTS) - self.embed_text(SHARP_PROMPTS))
@@ -305,10 +353,10 @@ def load_cache(folder):
             data = np.load(cache_file)
             if str(data["model"]) == MODEL_NAME:
                 # read each array once, not once per photo; older caches lack some fields
-                arrays = {f: data[f] for f in FIELDS + FOCUS_FIELDS if f in data.files}
+                arrays = {f: data[f] for f in FIELDS + SLOW_FIELDS if f in data.files}
                 for i, key in enumerate(data["keys"]):
                     cached[str(key)] = {f: values[i] for f, values in arrays.items()
-                                        if not (f in FOCUS_FIELDS and values[i] == NOT_CHECKED)}
+                                        if not (f in SLOW_FIELDS and values[i] == NOT_CHECKED)}
                 return cached
     return cached
 
@@ -318,7 +366,7 @@ def save_cache(folder, cached):
     keys = [k for k in cached if all(f in cached[k] for f in FIELDS)]
     np.savez(folder / STUDIO_DIR / "analysis.npz", model=MODEL_NAME, keys=np.array(keys),
              **{f: np.array([cached[k][f] for k in keys]) for f in FIELDS},
-             **{f: np.array([cached[k].get(f, NOT_CHECKED) for k in keys]) for f in FOCUS_FIELDS})
+             **{f: np.array([cached[k].get(f, NOT_CHECKED) for k in keys]) for f in SLOW_FIELDS})
 
 
 def analyse(folder, progress):
@@ -377,8 +425,8 @@ def analyse(folder, progress):
     if todo or missing or no_blur:
         save_cache(folder, cached)
 
-    # Focus on the main animal or person; slow, so it is saved every 100 photos and continues
-    # where it stopped if the app is closed
+    # Focus on the main animal or person, and softness at half size; slow, so they are saved
+    # regularly and continue where they stopped if the app is closed
     no_focus = [i for i, k in enumerate(keys) if k in cached and "subject_blur" not in cached[k]]
     started = time.time()
     for n, i in enumerate(no_focus):
@@ -390,6 +438,16 @@ def analyse(folder, progress):
         progress(n + 1, len(no_focus), f"Checking focus ({n + 1} of {len(no_focus)})", started)
         if (n + 1) % 100 == 0 or n + 1 == len(no_focus):
             save_cache(folder, cached)
+    no_soft = [i for i, k in enumerate(keys) if k in cached and "softness" not in cached[k]]
+    started = time.time()
+    for n, i in enumerate(no_soft):
+        try:
+            cached[keys[i]]["softness"] = softness_metric(paths[i])
+        except Exception:  # not readable at full size: not measured (never flagged)
+            cached[keys[i]]["softness"] = np.nan
+        progress(n + 1, len(no_soft), f"Checking sharpness in detail ({n + 1} of {len(no_soft)})", started)
+        if (n + 1) % 200 == 0 or n + 1 == len(no_soft):
+            save_cache(folder, cached)
 
     ok = [k for k in keys if k in cached]
-    return Library(folder, ok, {f: np.array([cached[k][f] for k in ok]) for f in FIELDS + FOCUS_FIELDS}, broken)
+    return Library(folder, ok, {f: np.array([cached[k][f] for k in ok]) for f in FIELDS + SLOW_FIELDS}, broken)

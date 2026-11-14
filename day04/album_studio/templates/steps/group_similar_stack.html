@@ -24,7 +24,7 @@
         <input type="checkbox" class="pick" name="ticked" value="{{ p.id }}" id="tick-{{ p.id }}">
         <label class="check" for="tick-{{ p.id }}" title="Tick">✓</label>
         <a class="open view" data-list="stack" href="{{ url_for('photo', i=p.id) }}" data-id="{{ p.id }}"
-           data-caption="{{ p.caption }}" data-rejected="{{ 1 if p.rejected else 0 }}">
+           data-caption="{{ p.caption }}" data-hidden="{{ 1 if p.rejected else 0 }}">
           <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=p.id) }}" alt=""></div>
             {% if loop.first %}<span class="badge">Best quality</span>{% endif %}</div>
         </a>
@@ -41,7 +41,8 @@
   </div>
 </form>
 
-<form id="hide-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}" hidden>
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_reject') }}"
+      data-key="h" data-flag="hidden" data-label-on="Hidden · show again" data-label-off="Hide this photo" hidden>
   <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
 </form>
 {% endblock %}

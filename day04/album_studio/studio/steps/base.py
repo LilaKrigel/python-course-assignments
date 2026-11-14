@@ -39,6 +39,12 @@ class Step:
 
     # ---------- The web pages ----------
 
+    def prepare(self, project):
+        """Slow work needed before the step's pages can be shown (e.g. loading a model), as a
+        project.Job running in the background; None when there is nothing to do. While the job
+        runs, the progress page is shown."""
+        return None
+
     def page(self, project, view, args):
         """The template and its data for one page of the step. `view` is the rest of the URL after
         /step/<id>/ (None for the step's main page); `args` are the URL's ?query values.
@@ -49,8 +55,9 @@ class Step:
 
     def form_action(self, project, name, form):
         """Handle a form sent from the step's pages: read the form, call action(), and return a
-        short message for the user ('' for none). Raise ValueError for a form that can't be used;
-        its text is shown to the user."""
+        short message for the user ('' for none). To give the message an Undo button, return
+        (message, fields): the form fields that undo the change, with "action" naming the action.
+        Raise ValueError for a form that can't be used; its text is shown to the user."""
         self.action(project, name, {})
         return ""
 

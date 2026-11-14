@@ -1,0 +1,10 @@
+{# Small line icons (24×24, drawn with the text colour). Use: {% import "icons.html" as icon %} … {{ icon.heart(true) }} #}
+{% macro heart(filled=false) -%}
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="{{ 'currentColor' if filled else 'none' }}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20.5s-7.5-4.6-9.4-9.1C1.3 8.2 3.2 4.5 6.8 4.5c2.1 0 3.6 1.2 5.2 3.1 1.6-1.9 3.1-3.1 5.2-3.1 3.6 0 5.5 3.7 4.2 6.9-1.9 4.5-9.4 9.1-9.4 9.1z"/></svg>
+{%- endmacro %}
+{% macro hide() -%}
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.6A9.6 9.6 0 0 1 12 4.4c6 0 9.8 7.6 9.8 7.6a17 17 0 0 1-2.4 3.4M6.4 6.5C3.8 8.2 2.2 12 2.2 12s3.8 7.6 9.8 7.6a9.4 9.4 0 0 0 5.2-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>
+{%- endmacro %}
+{% macro stack() -%}
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="8" width="13" height="13" rx="2.5"/><path d="M8 4h10.5A2.5 2.5 0 0 1 21 6.5V17"/></svg>
+{%- endmacro %}

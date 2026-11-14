@@ -1,0 +1,60 @@
+# One species per line. Lines starting with # are ignored.
+# Album Studio recognises these animals in step 2 (Pick photos). For another trip, replace the list.
+lion
+leopard
+cheetah
+African elephant
+giraffe
+zebra
+hippopotamus
+rhinoceros
+African buffalo
+wildebeest
+impala
+Thomson's gazelle
+Grant's gazelle
+gerenuk
+oryx
+eland
+kudu
+topi
+hartebeest
+waterbuck
+dik-dik
+warthog
+spotted hyena
+jackal
+African wild dog
+serval
+baboon
+vervet monkey
+gorilla
+chimpanzee
+meerkat
+mongoose
+crocodile
+monitor lizard
+tortoise
+ostrich
+flamingo
+pelican
+marabou stork
+secretary bird
+vulture
+eagle
+hornbill
+lilac-breasted roller
+grey crowned crane
+kingfisher
+helmeted guineafowl
+superb starling
+owl
+kori bustard
+weaver bird
+bee-eater
+heron
+egret
+hamerkop
+Egyptian goose
+rock hyrax
+banded mongoose

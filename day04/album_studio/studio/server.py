@@ -89,17 +89,30 @@ def progress():
     project, job = current["project"], current["job"]
     if project is None or job is None:
         return redirect(url_for("index"))
+    next_page = getattr(job, "next_page", None)  # set for a step's job; None while opening a folder
     if job.finished:
         if job.error:
-            current["project"] = None
-            flash(f"Analysis failed: {job.error}", "error")
-        return redirect(url_for("index"))
+            flash(f"{job.title} failed: {job.error}", "error")
+            if next_page is None:  # the folder could not be analysed
+                current["project"] = None
+                return redirect(url_for("index"))
+            return redirect(url_for("step_page", step_id=STEPS[0].id))
+        return redirect(next_page or url_for("index"))
     return render_template("progress.html", job=job.info(), project=project)
 
 
 @app.template_filter("duration")
 def duration(seconds):
     return f"{max(5, round(seconds / 5) * 5)} seconds" if seconds < 90 else f"{round(seconds / 60)} minutes"
+
+
+@app.after_request
+def no_stale_pages(response):
+    """Pages show the current state, so the browser must not keep old copies (e.g. for its Back
+    button). Thumbnails and photos set their own caching."""
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ---------- The steps ----------
@@ -118,6 +131,11 @@ def step_page(step_id, view=None):
     if (other := not_ready()) is not None:
         return other
     step = get_step(step_id)
+    job = step.prepare(current["project"])
+    if job is not None:  # e.g. step 2 embeds its text descriptions the first time
+        job.next_page = request.full_path.rstrip("?")
+        current["job"] = job
+        return redirect(url_for("progress"))
     try:
         template, data = step.page(current["project"], view, request.args)
     except LookupError as err:
@@ -142,7 +160,12 @@ def step_action(step_id, action):
     except (ValueError, KeyError) as err:
         flash(str(err.args[0]) if err.args else "That didn't work.", "error")
         return redirect(back)
-    if message:
+    if isinstance(message, tuple):  # (message, the form fields that undo it): the message gets an Undo button
+        message, undo = message
+        undo = dict(undo)
+        flash({"text": message, "fields": undo,
+               "action": url_for("step_action", step_id=step.id, action=undo.pop("action"))}, "undo")
+    elif message:
         flash(message, "ok")
     return redirect(back)
 

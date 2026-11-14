@@ -1,0 +1,98 @@
+{# Step 3: the album in its order, and saving it. Data from ExportStep.main_page(). #}
+{% extends "workspace.html" %}
+{% import "icons.html" as icon %}
+{% block head %}{% if saving %}<meta http-equiv="refresh" content="1">{% endif %}{% endblock %}
+{% block step %}
+<div class="step-head compact">
+  <div class="eyebrow">Step {{ number }}</div>
+  <h1>{{ step.title }}</h1>
+  <p>{{ step.description }}</p>
+</div>
+
+{% if not count %}
+  <div class="panel empty">No photos picked yet. <a href="{{ url_for('step_page', step_id='pick') }}">Pick photos (step 2)</a></div>
+{% else %}
+  {# Saving: the folder, the button, and what happened last time #}
+  <div class="panel export-panel">
+    {% if saving %}
+      <div class="export-status">
+        <b>{{ job.message }}</b>
+        <div class="bar small" role="progressbar" aria-valuenow="{{ (100 * job.done / job.total)|round|int if job.total else 0 }}"
+             aria-valuemin="0" aria-valuemax="100"><div style="width: {{ (100 * job.done / job.total)|round|int if job.total else 0 }}%"></div></div>
+      </div>
+    {% else %}
+      <div class="export-status">
+        <b>{{ count }} photo{{ 's' if count != 1 }}</b> will be saved as numbered copies of the originals in
+        <code>{{ folder }}</code>, with <code>album.html</code>, a page with all of them to print or save as PDF.
+        {% if job and job.error %}<p class="error-text">Saving failed: {{ job.error }}</p>{% endif %}
+        {% if exported %}
+          <p class="hint">Last saved {{ exported.when }}: {{ exported.count }} photos. Saving again replaces them.</p>
+        {% endif %}
+      </div>
+      <div class="export-buttons">
+        <form method="post" action="{{ url_for('step_action', step_id=step.id, action='export') }}">
+          <input type="hidden" name="back" value="{{ here }}">
+          <button class="btn primary">{{ 'Save the album again' if exported else 'Save the album' }}</button>
+        </form>
+        {% if exported and can_open_folder %}
+          <form method="post" action="{{ url_for('step_action', step_id=step.id, action='open_folder') }}">
+            <input type="hidden" name="back" value="{{ here }}">
+            <button class="btn">Open the folder</button>
+          </form>
+        {% endif %}
+        <a class="btn" href="{{ url_for('step_page', step_id=step.id, view='sheet') }}" target="_blank">Album page (print / PDF)</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="toolbar">
+    <form method="post" action="{{ url_for('step_action', step_id=step.id, action='set_order') }}" class="tabs" aria-label="Order">
+      <input type="hidden" name="back" value="{{ here }}">
+      {% for value, name in order_options %}
+        <button class="tab {{ 'on' if value == order }}" name="order" value="{{ value }}"
+                {% if value == order %}aria-current="true"{% endif %}>{{ name }}</button>
+      {% endfor %}
+    </form>
+    <span class="hint shown-count">{{ count }} photo{{ 's' if count != 1 }}</span>
+    <label class="size-control">Size <input type="range" id="size" min="120" max="340" step="10" value="200" aria-label="Photo size"></label>
+  </div>
+
+  {# ♥ removes a photo from the album (it is step 2's pick) #}
+  <form id="album-form" method="post" action="{{ url_for('step_action', step_id='pick', action='toggle_pick') }}">
+    <input type="hidden" name="back" value="{{ here }}">
+    {% for section in sections %}
+      <div class="day"><h2>{{ section.title }}</h2><span>{{ section.photos|length }} photo{{ 's' if section.photos|length != 1 }}</span></div>
+      <div class="grid">
+        {% for p in section.photos %}
+          <div class="card pick-card is-picked">
+            <a class="open view" data-list="album" href="{{ url_for('photo', i=p.id) }}" data-id="{{ p.id }}"
+               data-caption="{{ p.caption }}" data-picked="1">
+              <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=p.id) }}" alt="{{ p.label }}"></div></div>
+            </a>
+            <div class="card-actions">
+              <button class="heart act-btn on" name="photo" value="{{ p.id }}" aria-pressed="true"
+                      title="In the album · click to remove it" aria-label="Remove from the album">{{ icon.heart(true) }}</button>
+            </div>
+            <div class="caption">
+              <span class="number">{{ p.number }}</span>
+              <span class="subject-name {{ p.category }}">{{ p.label }}</span>
+              {% if p.soft %}<span class="soft-note" title="Looks soft when seen large">soft</span>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </form>
+{% endif %}
+
+<form class="step-foot" method="post" action="{{ url_for('step_action', step_id=step.id, action='complete') }}">
+  <span>{% if exported %}Saved in {{ exported.folder }}.{% else %}Not saved yet.{% endif %}</span>
+  <button class="btn primary">Finish</button>
+</form>
+
+{# The photo viewer's button and key: P removes the shown photo from the album (or puts it back) #}
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id='pick', action='toggle_pick') }}"
+      data-key="p" data-flag="picked" data-label-on="♥ In the album · remove" data-label-off="♡ Put back" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+{% endblock %}

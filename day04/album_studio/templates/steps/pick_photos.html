@@ -1,0 +1,159 @@
+{# Step 2: find photos by subject and pick them. Data from PickPhotosStep.main_page().
+   Design: the photos come first. A card is just the photo with one quiet caption line under it;
+   its two actions (hide, ♡) appear on hover or keyboard focus, and always on touch screens.
+   A picked photo always shows its ♥ and an outline. #}
+{% extends "workspace.html" %}
+{% import "icons.html" as icon %}
+{% block step %}
+<div class="step-head compact">
+  <div class="eyebrow">Step {{ number }}</div>
+  <h1>{{ step.title }}</h1>
+  <p>{{ step.description }}</p>
+</div>
+
+{# How far the album is, and which photos to show (stays at the top while scrolling) #}
+<div class="album-bar">
+  <div class="album-count">
+    <span class="heart-icon">{{ icon.heart(true) }}</span><b>{{ picked }}</b>&nbsp;picked
+    <form class="target-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='set_target') }}" data-autosubmit>
+      <input type="hidden" name="back" value="{{ here }}">
+      <label>of <input type="number" name="target" min="1" max="5000" value="{{ target or '' }}"
+                       placeholder="target" aria-label="How many photos the album should have"></label>
+    </form>
+  </div>
+  {% if progress is not none %}
+    <div class="bar small" role="progressbar" aria-label="Album progress" aria-valuenow="{{ progress }}"
+         aria-valuemin="0" aria-valuemax="100"><div style="width: {{ progress }}%"></div></div>
+  {% endif %}
+  <nav class="tabs" aria-label="Show">
+    {% for value, name in show_options if value != 'hidden' or hidden_groups or show == 'hidden' %}
+      <a href="{{ link(show=value) }}" class="{{ 'on' if value == show }}" {% if value == show %}aria-current="page"{% endif %}>{{ name }}
+        {%- if value == 'hidden' %} <span class="n">{{ hidden_groups }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{# Subjects: the four kinds; the species only once Animals (or a species) is chosen #}
+<section class="subjects" aria-label="Subjects">
+  <div class="chips">
+    <a class="chip {{ 'on' if not subject }}" href="{{ all_link }}">All <span class="n">{{ all_groups }}</span></a>
+    {% for ch in categories %}
+      <a class="chip {{ 'on' if ch.on or (ch.key == 'animals' and show_species) }}" href="{{ ch.link }}">{{ ch.label }} <span class="n">{{ ch.groups }}</span>
+        {%- if ch.picked %} <span class="picked-n">♥ {{ ch.picked }}</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+  {% if show_species and species_chips %}
+    <div class="chips species-chips">
+      {% for ch in species_chips %}
+        <a class="chip small {{ 'on' if ch.on }} {{ 'missing' if not ch.picked and ch.key != 'other animals' }}" href="{{ ch.link }}"
+           title="{{ ch.groups }} group{{ 's' if ch.groups != 1 }} · {{ ch.picked }} picked">{{ ch.label }} <span class="n">{{ ch.groups }}</span>
+          {%- if ch.picked %} <span class="picked-n">♥ {{ ch.picked }}</span>{% endif %}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if show == 'hidden' %}
+    <p class="missing-line">Groups you hid here are left out of the album.
+      {%- if bad_count %} Blurry and bad photos ({{ bad_count }}) are left out in step 1:
+      <a href="{{ url_for('step_page', step_id='group', view='review') }}">review them there</a>.{% endif %}</p>
+  {% elif picked and missing %}
+    <details class="missing-line">
+      <summary><b>{{ missing|length }} subject{{ 's' if missing|length != 1 }}</b> not in the album yet</summary>
+      <p>{% for m in missing %}<a href="{{ m.link }}">{{ m.label }}</a>{{ ", " if not loop.last }}{% endfor %}</p>
+    </details>
+  {% elif picked %}
+    <p class="missing-line done">Every subject has a photo in the album ✓</p>
+  {% endif %}
+</section>
+
+<div class="toolbar">
+  <nav class="tabs" aria-label="Order">
+    {% for value, name in order_options %}
+      <a href="{{ link(order=value) }}" class="{{ 'on' if value == order }}" {% if value == order %}aria-current="page"{% endif %}>{{ name }}</a>
+    {% endfor %}
+  </nav>
+  <span class="hint shown-count">{{ shown_groups }} of {{ all_groups }} group{{ 's' if all_groups != 1 }}
+    {%- if bad_count and show != 'hidden' %} · <a href="{{ url_for('step_page', step_id='group', view='review') }}"
+       title="Blurry and bad photos are left out in step 1">{{ bad_count }} bad photos left out</a>{% endif %}</span>
+  {% if review_link %}<a class="btn small review-btn" href="{{ review_link }}"
+     title="Go through the groups one by one, large: ← → photos, ↑ ↓ groups, P pick, H hide, Z zoom">Review one by one</a>{% endif %}
+  <label class="size-control" title="Photo size"><span class="visually-hidden">Size</span>
+    <input type="range" id="size" min="120" max="340" step="10" value="200" aria-label="Photo size"></label>
+</div>
+
+{# ♡ picks the card's photo (the best one of the group); click the group to choose others.
+   Hide sends the same form to the "hide" action (formaction). #}
+<form id="pick-form" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_pick') }}">
+  <input type="hidden" name="back" value="{{ here }}">
+  {% for section in sections %}
+    {% if section.title %}
+      <div class="day"><h2>{{ section.title }}</h2>
+        <span>{{ section.cards|length }} group{{ 's' if section.cards|length != 1 }}{% if section.picked %} · ♥ {{ section.picked }}{% endif %}</span></div>
+    {% endif %}
+    <div class="grid">
+      {% for c in section.cards %}
+        <div class="card pick-card {{ 'stack' if c.count > 1 }} {{ 'is-picked' if c.cover_picked }} {{ 'dismissed' if c.dismissed }}" id="g-{{ c.key }}">
+          {# a group opens, like in step 1; a single photo opens large #}
+          {% if c.total > 1 %}
+            <a class="open" href="{{ c.link }}" title="{{ c.subject }} · {{ c.count_text }} · {{ c.time }}"
+               aria-label="{{ c.subject }}: open the {{ c.total }} photos of this group">
+          {% else %}
+            <a class="open view" data-list="cards" href="{{ url_for('photo', i=c.cover) }}" data-id="{{ c.cover }}"
+               title="{{ c.subject }} · {{ c.time }}" data-caption="{{ c.caption }}" data-hidden="{{ 1 if c.dismissed else 0 }}"
+               {%- if not c.dismissed %} data-picked="{{ 1 if c.cover_picked else 0 }}"{% endif %}>
+          {% endif %}
+            <div class="frame"><div class="clip"><img loading="lazy" src="{{ url_for('thumb', i=c.cover) }}" alt="{{ c.subject }}"></div></div>
+          </a>
+          <div class="card-actions">
+            {% if c.dismissed %}
+              <button class="pill-btn" name="group" value="{{ c.key }}"
+                      formaction="{{ url_for('step_action', step_id=step.id, action='hide', hide=0) }}">Show again</button>
+            {% else %}
+              <button class="act-btn hide-btn" name="group" value="{{ c.key }}"
+                      formaction="{{ url_for('step_action', step_id=step.id, action='hide', hide=1) }}"
+                      title="Hide this {{ 'group' if c.total > 1 else 'photo' }} (you can undo it)"
+                      aria-label="Hide">{{ icon.hide() }}</button>
+              <button class="heart act-btn {{ 'on' if c.cover_picked }}" name="photo" value="{{ c.cover }}"
+                      aria-pressed="{{ 'true' if c.cover_picked else 'false' }}"
+                      title="{{ 'Picked · click to remove from the album' if c.cover_picked else 'Pick this photo' }}"
+                      aria-label="{{ 'Remove from the album' if c.cover_picked else 'Pick' }}">{{ icon.heart(c.cover_picked) }}</button>
+            {% endif %}
+          </div>
+          <div class="caption">
+            <span class="subject-name {{ c.category }}">{{ c.subject }}</span>
+            {% if c.soft %}<span class="soft-note" title="Looks soft when seen large (Z in the viewer to check)">soft</span>{% endif %}
+            {% if c.picked > 1 %}<span class="picked-note">♥ {{ c.picked }}</span>{% endif %}
+            {% if c.total > 1 %}<span class="photo-count" title="{{ c.count_text }}">{{ icon.stack() }}{{ c.count_short }}</span>{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      {% if show == 'hidden' %}
+        Nothing {{ ('of ' ~ subject_label ~ ' ') if subject }}is hidden. <a href="{{ link(show='all') }}">Show all</a>
+      {% elif show == 'picked' %}
+        No {{ subject_label ~ ' ' if subject }}photos picked yet. <a href="{{ link(show='all') }}">Show all</a>
+      {% elif show == 'unpicked' %}
+        Every {{ subject_label ~ ' ' if subject }}group has a picked photo. <a href="{{ link(show='all') }}">Show all</a>
+      {% else %}
+        No groups for this subject. <a href="{{ all_link }}">Show all subjects</a>
+      {% endif %}
+    </div>
+  {% endfor %}
+</form>
+
+<form class="step-foot" method="post" action="{{ url_for('step_action', step_id=step.id, action='complete') }}">
+  <span>{{ picked }} photo{{ 's' if picked != 1 }} picked{% if target %} of {{ target }}{% endif %}.</span>
+  <button class="btn primary">{% if next_step %}Next: {{ next_step.title }} →{% else %}Finish{% endif %}</button>
+</form>
+
+{# The photo viewer's buttons and keys: P picks the shown photo, H hides it #}
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id=step.id, action='toggle_pick') }}"
+      data-key="p" data-flag="picked" data-label-on="♥ Picked · remove" data-label-off="♡ Pick" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+<form class="viewer-action" method="post" action="{{ url_for('step_action', step_id=step.id, action='hide') }}"
+      data-key="h" data-flag="hidden" data-label-on="Hidden · show again" data-label-off="Hide" hidden>
+  <input type="hidden" name="photo"><input type="hidden" name="back" value="{{ here }}">
+</form>
+{% endblock %}
