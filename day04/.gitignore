@@ -1,3 +1,5 @@
 __pycache__/
 album_studio/recent_folders.json
 album_studio/text_embeddings.npz
+.pytest_cache/
+album_studio/tests/dataset/

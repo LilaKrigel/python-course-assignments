@@ -41,6 +41,12 @@ OVEREXPOSED_COLOUR = 9
 # Too dark: even the brightest parts (95th percentile brightness, 0-255) are dark. The 5 darkest
 # trip photos were at most 39; dim but usable ones (dusk, shade) started at 55.
 TOO_DARK_BELOW = 50
+# Also too dark: most of the photo is very dark (half of it darker than 20) and nothing in it is
+# really bright. A bright window kept two dark room photos above the limit above (brightest 87
+# and 56, middle 16 and 12); the second condition keeps sunset silhouettes (brightest 228) and
+# deep shade next to sunlight (119) shown. On the 2046 trip photos it hides no new photo.
+MOSTLY_DARK_MIDDLE = 20
+MOSTLY_DARK_BRIGHTEST = 100
 # Out of focus: the camera focused on the background (sharp grass) instead of the animal. The
 # largest animal or person is outlined (Mask R-CNN) and only its pixels are measured with the
 # re-blur metric of Crete et al. (2007): 0 = sharp .. 1 = blurry.
@@ -55,8 +61,17 @@ SOFT_TILE = 128  # tile size (pixels at half size) for the softness measure
 # warthogs _MG_1170/1171: 0.463/0.448). 26 photos are above it. Close-ups of zebras can score high
 # while sharp (wide smooth stripes have little fine detail), so it is a hint only.
 SOFT_ABOVE = 0.44
+# Also soft: the animal or person is much softer than the sharpest parts of the photo (a soft cat
+# on a sharp sofa: 0.557 against 0.233). Only a hint: smooth subjects (skin, dark fur, zebra stripes)
+# also measure soft, which is why this cannot hide photos. On the trip photos a gap of 0.27 marked
+# the soft black dog photos but not a sharp selfie (0.25).
+SUBJECT_SOFT_GAP = 0.27
+# Much softer still: out of focus (hidden). A soft cat on a sharp sofa: 0.324; a soft black dog:
+# 0.352, the only trip photo it hides besides those hidden already. The sharp selfie (0.25) stays
+# well below it.
+SUBJECT_UNFOCUSED_GAP = 0.30
 FIELDS = ["embedding", "sharpness", "clipped", "pixels", "taken", "pale_flat", "rest_colour", "brightest",
-          "blur"]
+          "middle_brightness", "blur"]
 # Slow to measure (focus about 2 s per photo, softness 0.35 s), so saved while still incomplete;
 # NOT_CHECKED marks the rest
 SLOW_FIELDS = ["subject_area", "subject_blur", "softness"]
@@ -97,22 +112,34 @@ class Library:
     def thumb_path(self, i):
         return thumb_path(self.folder, self.keys[i])
 
+    def subject_gap(self, i):
+        """How much softer the animal or person is than the sharpest parts of the photo (0 when
+        there is no big enough subject, or the photo is not measured yet)."""
+        if not (self.softness[i] > 0 and self.subject_area[i] >= FOCUS_LIMITS[0][0]):
+            return 0.0
+        gap = self.subject_blur[i] - self.softness[i]
+        return float(gap) if gap == gap else 0.0  # NaN: no subject found
+
     def is_soft(self, i):
-        """The photo looks soft when seen large (a hint; soft photos are not hidden)."""
-        return bool(self.softness[i] > SOFT_ABOVE)  # NaN and NOT_CHECKED (-1) never are
+        """The photo looks soft when seen large, or its animal or person is much softer than the
+        rest of it (a hint; soft photos are not hidden). NaN and NOT_CHECKED (-1) never count."""
+        return bool(self.softness[i] > SOFT_ABOVE or self.subject_gap(i) >= SUBJECT_SOFT_GAP)
 
     def problem(self, i):
         """Why photo i is not worth showing: "blank", "dark", "blurry", "unfocused", "overexposed",
         or "" if it is fine."""
         if self.clipped[i] > BLANK_ABOVE:
             return "blank"
-        if self.brightest[i] < TOO_DARK_BELOW:  # before blurry: dark photos also measure as unsharp
+        if (self.brightest[i] < TOO_DARK_BELOW  # before blurry: dark photos also measure as unsharp
+                or self.middle_brightness[i] < MOSTLY_DARK_MIDDLE and self.brightest[i] < MOSTLY_DARK_BRIGHTEST):
             return "dark"
         if (self.sharpness[i] < BLURRY_BELOW or self.blur[i] > LOOKS_BLURRY_ABOVE
                 or self.sharpness[i] < SOFT_BELOW and self.blur[i] > LOOKS_SOFT_ABOVE):
             return "blurry"
         limit = next(limit for share, limit in FOCUS_LIMITS if self.subject_area[i] >= share)
         if self.subject_blur[i] > limit:  # NaN (no animal or person found) is never above
+            return "unfocused"
+        if self.subject_gap(i) >= SUBJECT_UNFOCUSED_GAP:  # the subject much softer than the rest
             return "unfocused"
         if self.pale_flat[i] > OVEREXPOSED_PALE and self.rest_colour[i] < OVEREXPOSED_COLOUR:
             return "overexposed"
@@ -188,7 +215,8 @@ def quality_metrics(img):
 
 def exposure_metrics(thumb):
     """Return (fraction of flat, pale pixels, colourfulness of the rest, brightness of the
-    brightest parts), measured on the thumbnail (the thresholds above were chosen on thumbnails)."""
+    brightest parts, middle brightness: half the photo is darker), measured on the thumbnail
+    (the thresholds above were chosen on thumbnails)."""
     rgb = np.asarray(thumb.convert("RGB"), dtype=np.float32)
     lum = rgb @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
     spread = rgb.max(axis=2) - rgb.min(axis=2)  # 0 for grey/white, large for strong colours
@@ -198,7 +226,7 @@ def exposure_metrics(thumb):
                            + np.abs(c - lum[1:-1, :-2]) + np.abs(c - lum[1:-1, 2:])) / 4
     pale = (lum > 200) & (spread < 30) & (texture < 2)
     colour = float(spread[~pale].mean()) if (~pale).sum() > 100 else 0.0
-    return float(np.mean(pale)), colour, float(np.percentile(lum, 95))
+    return float(np.mean(pale)), colour, float(np.percentile(lum, 95)), float(np.median(lum))
 
 
 def box_mean9(a, axis):
@@ -405,11 +433,12 @@ def analyse(folder, progress):
         progress(done, len(todo), f"Reading photos ({done} of {len(todo)})", started)
 
     # Exposure is measured on the thumbnails (also for photos analysed by an older version)
-    missing = [k for k in keys if k in cached and "brightest" not in cached[k]]
+    missing = [k for k in keys if k in cached and "middle_brightness" not in cached[k]]
     started = time.time()
     for n, key in enumerate(missing):
         with Image.open(thumb_path(folder, key)) as thumb:
-            cached[key]["pale_flat"], cached[key]["rest_colour"], cached[key]["brightest"] = exposure_metrics(thumb)
+            (cached[key]["pale_flat"], cached[key]["rest_colour"], cached[key]["brightest"],
+             cached[key]["middle_brightness"]) = exposure_metrics(thumb)
         if n % 50 == 0:
             progress(n, len(missing), f"Checking exposure ({n} of {len(missing)})", started)
 

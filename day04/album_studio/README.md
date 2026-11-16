@@ -37,8 +37,9 @@ opens in under a second.
 - Tick two or more groups (circle in the corner) and click *Merge into one group*.
 - *Hide blurry and bad photos* (on by default) hides photos that are blurry (sharpness below
   15, or motion blur that the image model recognises), out of focus (the animal or person is
-  soft while the background may be sharp), almost entirely black or white, too
-  dark (even the brightest parts are dark), or overexposed (more than 20% flat, pale sky and the rest nearly colourless). *Review* lists them, with *Keep* for any that are fine after all,
+  soft while the background may be sharp, or much softer than the sharpest parts of the photo), almost entirely black or white, too
+  dark (even the brightest parts are dark, or most of the photo is very dark and nothing in it
+  is really bright, like a dark room with a bright window), or overexposed (more than 20% flat, pale sky and the rest nearly colourless). *Review* lists them, with *Keep* for any that are fine after all,
   plus files that could not be opened. The thresholds are in `studio/analysis.py`.
 - To hide a bad photo the checks missed, click *Hide* under it in an opened group, or press
   H in the full-screen view. It is hidden with the others while the switch is on, and *Review*
@@ -69,7 +70,9 @@ opens in under a second.
   found under that subject too. The card then shows one of those photos and "7 of 62 photos",
   and opening it shows just those photos (with a link to all of them).
 - **Soft** on a photo: it looks soft when seen large (measured at half size, where a slight blur
-  shows). It is only a hint: zoom in to judge (Z in the viewer).
+  shows), or its animal or person is much softer than the rest of the photo (a soft cat on a sharp
+  sofa). It is only a hint, because smooth subjects (skin, dark fur) also measure soft: zoom in to
+  judge (Z in the viewer).
 - **Click a group** to open it (as in step 1): all its photos in the order they were taken, so you
   choose by what is interesting, not by quality. ♡ as many as you like, and *Hide* the ones you don't
   want to see (hidden photos stay there, faded, with *Show again*). Hiding the last one hides the
@@ -161,6 +164,25 @@ The pages are:
 | `/step/<id>/<page>` | another page of a step, e.g. `/step/group/stack/412`, `/step/pick/group/412?subject=lion`, `/step/export/sheet` |
 | `POST /step/<id>/do/<action>` | a button press, e.g. `/step/group/do/merge` |
 | `/thumb/<n>`, `/photo/<n>` | a photo's thumbnail and large version (`?size=4000` for zooming in) |
+
+### Tests
+
+The business logic has its own tests (pytest), with made-up photo data and a fake image model,
+so they need no photos and take about 3 seconds:
+
+```
+pip install -r requirements-dev.txt
+python -m pytest tests
+python -m pytest tests --dataset                # also the photo dataset: real images, real image model
+python -m pytest tests --dataset=D:/my_dataset   # a dataset of your own photos
+```
+
+A photo dataset holds photos in folders named after the answer the app must give (e.g.
+`quality/blurry/`, `subjects/lion/`). It is not in the repository: with `--dataset`, a fake one is
+made first if the folder does not exist (drawn photos and fakes made from them), and you can add
+your own photos. See [tests/README.md](tests/README.md).
+
+See [../../day05/README.md](../../day05/README.md) for what they check.
 
 ### Adding a step
 
