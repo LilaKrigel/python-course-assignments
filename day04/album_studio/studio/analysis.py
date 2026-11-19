@@ -4,6 +4,7 @@ Every step of the album works on these results. They are cached in
 <photo folder>/.album_studio/, so a folder is only analysed the first time it is opened.
 """
 import hashlib
+import logging
 import os
 import time
 from datetime import datetime
@@ -11,6 +12,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", ".heic", ".heif"}
 STUDIO_DIR = ".album_studio"
@@ -123,26 +126,53 @@ class Library:
     def is_soft(self, i):
         """The photo looks soft when seen large, or its animal or person is much softer than the
         rest of it (a hint; soft photos are not hidden). NaN and NOT_CHECKED (-1) never count."""
-        return bool(self.softness[i] > SOFT_ABOVE or self.subject_gap(i) >= SUBJECT_SOFT_GAP)
+        soft = bool(self.softness[i] > SOFT_ABOVE or self.subject_gap(i) >= SUBJECT_SOFT_GAP)
+        log.debug("%s: soft=%s (softness %.3f, limit %s; subject %.3f softer than the rest, limit %s)",
+                  self.files[i], soft, self.softness[i], SOFT_ABOVE, self.subject_gap(i), SUBJECT_SOFT_GAP)
+        return soft
 
     def problem(self, i):
         """Why photo i is not worth showing: "blank", "dark", "blurry", "unfocused", "overexposed",
-        or "" if it is fine."""
+        or "" if it is fine. The rules are checked in this order; the debug log says which one
+        decided, with the values it compared."""
+        name = self.files[i]
         if self.clipped[i] > BLANK_ABOVE:
+            log.debug("%s: blank: %.0f%% pure black or white (limit %.0f%%)", name, 100 * self.clipped[i], 100 * BLANK_ABOVE)
             return "blank"
-        if (self.brightest[i] < TOO_DARK_BELOW  # before blurry: dark photos also measure as unsharp
-                or self.middle_brightness[i] < MOSTLY_DARK_MIDDLE and self.brightest[i] < MOSTLY_DARK_BRIGHTEST):
+        if self.brightest[i] < TOO_DARK_BELOW:  # before blurry: dark photos also measure as unsharp
+            log.debug("%s: dark: brightest parts %.0f (limit %s)", name, self.brightest[i], TOO_DARK_BELOW)
             return "dark"
-        if (self.sharpness[i] < BLURRY_BELOW or self.blur[i] > LOOKS_BLURRY_ABOVE
-                or self.sharpness[i] < SOFT_BELOW and self.blur[i] > LOOKS_SOFT_ABOVE):
+        if self.middle_brightness[i] < MOSTLY_DARK_MIDDLE and self.brightest[i] < MOSTLY_DARK_BRIGHTEST:
+            log.debug("%s: dark: mostly dark, middle brightness %.0f (limit %s) and brightest %.0f (limit %s)",
+                      name, self.middle_brightness[i], MOSTLY_DARK_MIDDLE, self.brightest[i], MOSTLY_DARK_BRIGHTEST)
+            return "dark"
+        if self.sharpness[i] < BLURRY_BELOW:
+            log.debug("%s: blurry: sharpness %.1f (limit %s)", name, self.sharpness[i], BLURRY_BELOW)
+            return "blurry"
+        if self.blur[i] > LOOKS_BLURRY_ABOVE:
+            log.debug("%s: blurry: the image model sees blur %.3f (limit %s)", name, self.blur[i], LOOKS_BLURRY_ABOVE)
+            return "blurry"
+        if self.sharpness[i] < SOFT_BELOW and self.blur[i] > LOOKS_SOFT_ABOVE:
+            log.debug("%s: blurry: both a little off, sharpness %.1f (limit %s) and model blur %.3f (limit %s)",
+                      name, self.sharpness[i], SOFT_BELOW, self.blur[i], LOOKS_SOFT_ABOVE)
             return "blurry"
         limit = next(limit for share, limit in FOCUS_LIMITS if self.subject_area[i] >= share)
         if self.subject_blur[i] > limit:  # NaN (no animal or person found) is never above
+            log.debug("%s: unfocused: subject (%.1f%% of the photo) blur %.3f (limit %s for its size)",
+                      name, 100 * self.subject_area[i], self.subject_blur[i], limit)
             return "unfocused"
         if self.subject_gap(i) >= SUBJECT_UNFOCUSED_GAP:  # the subject much softer than the rest
+            log.debug("%s: unfocused: subject %.3f softer than the sharpest parts (limit %s)",
+                      name, self.subject_gap(i), SUBJECT_UNFOCUSED_GAP)
             return "unfocused"
         if self.pale_flat[i] > OVEREXPOSED_PALE and self.rest_colour[i] < OVEREXPOSED_COLOUR:
+            log.debug("%s: overexposed: %.0f%% flat pale area (limit %.0f%%), rest colour %.1f (limit %s)",
+                      name, 100 * self.pale_flat[i], 100 * OVEREXPOSED_PALE, self.rest_colour[i], OVEREXPOSED_COLOUR)
             return "overexposed"
+        log.debug("%s: fine: sharpness %.1f, model blur %.3f, brightest %.0f, middle %.0f, subject %.1f%% blur %.3f "
+                  "(limit %s), pale %.0f%%, colour %.1f", name, self.sharpness[i], self.blur[i], self.brightest[i],
+                  self.middle_brightness[i], 100 * self.subject_area[i], self.subject_blur[i], limit,
+                  100 * self.pale_flat[i], self.rest_colour[i])
         return ""
 
     def photo_info(self, i):
@@ -162,10 +192,17 @@ def find_images(folder):
     paths = []
     for path in sorted(folder.rglob("*")):
         rel_dirs = path.relative_to(folder).parts[:-1]
-        if (path.is_file() and path.suffix.lower() in IMAGE_EXTS
-                and not path.name.startswith("._")  # macOS metadata, not photos
-                and not any(d.startswith((".", "album_")) for d in rel_dirs)):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in IMAGE_EXTS:
+            log.debug("skipped %s: not an image type the app reads", path.relative_to(folder))
+        elif path.name.startswith("._"):  # macOS metadata, not photos
+            log.debug("skipped %s: macOS metadata", path.relative_to(folder))
+        elif any(d.startswith((".", "album_")) for d in rel_dirs):
+            log.debug("skipped %s: in a folder of the app (starts with . or album_)", path.relative_to(folder))
+        else:
             paths.append(path)
+    log.debug("found %d photos in %s", len(paths), folder)
     return paths
 
 
@@ -210,7 +247,9 @@ def quality_metrics(img):
     t = 32
     h, w = (laplacian.shape[0] // t) * t, (laplacian.shape[1] // t) * t
     tiles = laplacian[:h, :w].reshape(h // t, t, w // t, t).var(axis=(1, 3))
-    return float(np.percentile(tiles, 90)), float(np.mean((gray < 5) | (gray > 250)))
+    sharpness, clipped = float(np.percentile(tiles, 90)), float(np.mean((gray < 5) | (gray > 250)))
+    log.debug("sharpness %.1f (sharpest tiles), %.1f%% pure black or white", sharpness, 100 * clipped)
+    return sharpness, clipped
 
 
 def exposure_metrics(thumb):
@@ -281,7 +320,10 @@ def softness_metric(path):
         kept.append((total - lost) / np.maximum(total, 1e-6))
     tile_blur = np.maximum(*kept)
     textured = gray.reshape(h // t, t, w // t, t).std(axis=(1, 3)) > 8
-    return float(np.percentile(tile_blur[textured], 10)) if textured.any() else np.nan
+    softness = float(np.percentile(tile_blur[textured], 10)) if textured.any() else np.nan
+    log.debug("%s: softness %.3f at %dx%d (%d of %d tiles with detail)", Path(path).name, softness,
+              gray.shape[1], gray.shape[0], int(textured.sum()), textured.size)
+    return softness
 
 
 def focus_metrics(img, mask):
@@ -406,6 +448,8 @@ def analyse(folder, progress):
     keys = [cache_key(folder, p) for p in paths]
     cached = load_cache(folder)
     todo = [i for i, k in enumerate(keys) if k not in cached or not thumb_path(folder, k).exists()]
+    log.debug("analyse %s: %d photos, %d already analysed (cached), %d to read", folder, len(keys),
+              len(keys) - len(todo), len(todo))
     started = time.time()
     clip = None
     broken = []

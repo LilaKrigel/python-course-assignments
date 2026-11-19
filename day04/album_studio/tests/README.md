@@ -15,6 +15,33 @@ analysis and image model. The first run takes one or two minutes (the models are
 photo is analysed); the results are cached in the dataset's `.album_studio/` folder, so later runs
 take seconds and only new photos are analysed.
 
+## When a test fails: the log
+
+The app's business logic writes a log of what it does: what each function received, what it
+measured, and which rule decided. When a test fails, pytest prints that log under the failure
+("Captured log call"), each line with the file, line and function it came from, so you can see
+where it went wrong without a debugger. The tests also log the photos they made up.
+For example, with the rule "another subject needs at least 2 photos" broken on purpose:
+
+```
+FAILED tests/test_pick_photos.py::test_one_photo_of_another_subject_is_not_enough
+E   AssertionError: assert {'zebra': [10]} == {}
+------------------------------ Captured log call ------------------------------
+DEBUG conftest.py:130 make_library() | test photo p10.jpg: shows ['animals', 'zebra'], taken +86500s
+...
+DEBUG subjects.py:133 recognise() | group of photos [10]: animals (...); species vote of frames [10]: zebra 1.00 (needs 0.5) -> zebra
+DEBUG pick_photos.py:82 cards() | group 6 (12 photos, a large group): photo by photo {'wildebeest': 10, 'zebra': 1, 'other animals': 1}; other subjects shown by at least 1 photos (...): ['zebra']
+DEBUG pick_photos.py:92 cards() | card 6: wildebeest, photos [...] shown, [] hidden here, [] picked, cover 17, also {'zebra': 1}
+```
+
+To watch the log of a test that passes (here one test, by name):
+```
+python -m pytest tests -k test_one_photo_of_another -o log_cli=true --log-cli-level=DEBUG
+```
+The log lines are `log.debug(...)` in `studio/*.py`; they are off when the app runs normally.
+`pytest.ini` sets their format, and `conftest.py` turns them on for the tests (the app's own
+lines only, not those of libraries like Pillow).
+
 ## A photo dataset
 
 **The folder a photo is in is the answer the app must give:**

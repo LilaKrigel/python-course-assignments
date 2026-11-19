@@ -5,6 +5,7 @@ so closing the app never loses work. Saving is safe: the new version is written 
 file first and then replaces the old one, which is kept as project.json.bak.
 """
 import json
+import logging
 import os
 import shutil
 import threading
@@ -12,6 +13,8 @@ import time
 from pathlib import Path
 
 from .analysis import STUDIO_DIR, analyse
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 RECENT_FILE = Path(__file__).resolve().parent.parent / "recent_folders.json"
 SAVE_LOCK = threading.Lock()
@@ -33,9 +36,12 @@ class Project:
         """The saved choices; if the file is damaged, the previous version (project.json.bak)."""
         for path in (self.state_file, self.backup_file):
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
+                state = json.loads(path.read_text(encoding="utf-8"))
+                log.debug("choices read from %s", path.name)
+                return state
+            except (OSError, ValueError) as err:
+                log.debug("cannot read %s: %s", path.name, err)
+        log.debug("no saved choices: a new project")
         return {"steps": {}}
 
     @property
@@ -55,6 +61,7 @@ class Project:
             if self.state_file.exists():
                 shutil.copy2(self.state_file, self.backup_file)
             os.replace(temp, self.state_file)  # atomic: the file is the old or the new version
+            log.debug("saved %s (previous version kept as %s)", self.state_file.name, self.backup_file.name)
 
 
 class Job:

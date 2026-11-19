@@ -130,6 +130,16 @@ the app is weak, and two of them led to changes in the app:
   either folder.
 - New fast tests for both rules, including the photos that must stay shown.
 
+### A log for failed tests
+
+To see where a failing test went wrong without a debugger, the business logic now writes a debug
+log: what each function received, what it measured and which rule decided, with the numbers it
+compared (e.g. `p00.jpg: dark: mostly dark, middle brightness 16 (limit 20) and brightest 87 (limit
+100)`). pytest prints it under every failed test ("Captured log call"), each line with its file,
+line and function, after the photos the test made up. Checked by breaking a rule on purpose: the
+last lines of the log point at the function and the rule. When the app runs normally the lines
+are off; values that are worked out only for the log are worked out only when it is on.
+
 ### Testing the tests
 
 A test that always passes is worthless. To check the tests, a script broke one rule of the
@@ -210,3 +220,7 @@ a few of my photos.
 
 **Prompt 7** (with the two failing tests: the distant lion and the cat in `quality/blurry/`):
 > I don't think they should fail.
+
+**Prompt 8:**
+> To the tests I want you to add a log that will be printed in case of a failure, so it will be
+> possible to understand where exactly the function failed without a debugger.

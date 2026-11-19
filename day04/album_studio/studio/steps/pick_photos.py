@@ -7,6 +7,7 @@ corrections are saved per photo file, so they survive regrouping in step 1.
 
 The first half is the business logic; the second half prepares the web pages and reads their forms.
 """
+import logging
 from collections import Counter
 from datetime import datetime
 from urllib.parse import urlencode
@@ -15,6 +16,8 @@ from .. import subjects
 from ..project import Job
 from .base import Step
 from .group_similar import format_day
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 SHOW_OPTIONS = [("all", "All"), ("picked", "Picked"), ("unpicked", "Not picked"), ("hidden", "Hidden")]
 ORDER_OPTIONS = [("time", "Trip order"), ("subject", "By subject"), ("quality", "Best first")]
@@ -76,6 +79,9 @@ class PickPhotosStep(Step):
                 minors = {s for s, n in found.items() if s != subject and n >= MINOR_MIN
                           and s not in (subjects.OTHER_ANIMALS, "other")}  # not informative
                 labels = {i: per_photo[i] if per_photo[i] in minors else subject for i in ids}
+                log.debug("group %d (%d photos, a large group): photo by photo %s; other subjects shown by at "
+                          "least %d photos (and not %s): %s", group[0], len(ids), dict(found), MINOR_MIN,
+                          " or ".join((subjects.OTHER_ANIMALS, "other")), sorted(minors))
             listed = shown or out
             minor = {}
             for i in listed:
@@ -85,6 +91,10 @@ class PickPhotosStep(Step):
                           "all": sorted(ids, key=lambda i: lib.taken[i]), "picked": chosen,
                           "cover": (chosen or shown or out)[0], "subject": subject, "labels": labels,
                           "minor": minor, "recognised": auto, "corrected": bool(corrected)})
+            if log.isEnabledFor(logging.DEBUG):  # (the values below are only worked out for the log)
+                log.debug("card %d: %s%s, photos %s shown, %s hidden here, %s picked, cover %d%s", group[0], subject,
+                          f" (corrected; recognised: {auto})" if corrected else "", shown, out, chosen,
+                          cards[-1]["cover"], f", also {dict((s, len(v)) for s, v in minor.items())}" if minor else "")
         return cards
 
     def picked_count(self, project):
@@ -106,6 +116,7 @@ class PickPhotosStep(Step):
                            for c in self.cards(project)]}
 
     def action(self, project, name, payload):
+        log.debug("step 2 action %r %s", name, payload)
         lib, state = project.library, project.step_state(self.id)
         if name == "pick":  # payload: photo, on
             file = lib.files[payload["photo"]]
@@ -211,6 +222,9 @@ class PickPhotosStep(Step):
             listed.sort(key=lambda pair: subject_order.index(pair[1]))
         elif order == "quality":
             listed.sort(key=lambda pair: -lib.quality[self.cover(pair[0], pair[1])])
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("listing %s: %d of %d cards: %s", settings, len(listed), len(pool),
+                      [(c["key"], focus) for c, focus in listed])
         return {"cards": cards, "active": active, "pool": pool, "listed": listed, "groups_of": groups_of,
                 "picked_of": picked_of, "in_category": in_category, "species": species,
                 "subject_order": subject_order}
@@ -317,13 +331,17 @@ class PickPhotosStep(Step):
         keys = [c["key"] for c, _ in info["listed"]]
         if key in keys:
             n = keys.index(key)
+            log.debug("group %d is number %d of the list %s", key, n + 1, keys)
             return (keys[n - 1] if n else None), (keys[n + 1] if n + 1 < len(keys) else None), n + 1, len(keys)
         everything = [c["key"] for c, _ in self.listing(project, {**settings, "show": "all"})["listed"]]
         if key not in everything:
+            log.debug("group %d is not in the list, nor in the full list %s", key, everything)
             return None, None, None, len(keys)
         n, wanted = everything.index(key), set(keys)
         after = next((k for k in everything[n + 1:] if k in wanted), None)
         before = next((k for k in reversed(everything[:n]) if k in wanted), None)
+        log.debug("group %d left the list %s; by its place in the full list %s: before %s, after %s",
+                  key, keys, everything, before, after)
         return before, after, None, len(keys)
 
     def group_page(self, project, key, args):
@@ -383,6 +401,7 @@ class PickPhotosStep(Step):
             if not 0 <= i < len(lib):
                 raise ValueError("No such photo.")
             on = lib.files[i] not in self.picked_files(project)
+            log.debug("toggle pick of photo %d (%s): %s", i, lib.files[i], "pick" if on else "remove")
             self.action(project, "pick", {"photo": i, "on": on})
             target = state.get("target")
             if on and target and self.picked_count(project) == target:
@@ -436,6 +455,7 @@ class PickPhotosStep(Step):
         if on is None:  # one photo: hide it, or show it again
             on = lib.files[ids[0]] not in self.hidden_files(project)
         picked = len({lib.files[i] for i in ids} & self.picked_files(project))
+        log.debug("%s photos %s (from %s), %d of them picked", "hide" if on else "show again", ids, dict(form), picked)
         self.action(project, "hide", {"photos": ids, "on": on})
         undo = {"action": "hide", "photos": ",".join(map(str, ids)), "hide": "0" if on else "1"}
         n = f"{len(ids)} photos" if len(ids) > 1 else "Photo"

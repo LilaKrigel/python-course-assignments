@@ -8,6 +8,7 @@ Only files written by an earlier export are replaced; the originals are never ch
 
 The first half is the business logic; the second half prepares the web pages and reads their forms.
 """
+import logging
 import os
 import shutil
 import time
@@ -18,6 +19,8 @@ from .. import subjects
 from ..project import Job
 from .base import Step
 from .group_similar import format_day
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 FOLDER_NAME = "album_export"
 PAGE_NAME = "album.html"
@@ -70,6 +73,9 @@ class ExportStep(Step):
             for photo in section["photos"]:
                 number += 1
                 photo["number"] = number
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("album (%s order): %s", state.get("order", "time"),
+                      [(s["title"], [(p["number"], p["id"]) for p in s["photos"]]) for s in sections])
         return sections
 
     def file_name(self, project, photo):
@@ -114,12 +120,14 @@ class ExportStep(Step):
 
         def work(progress):
             target.mkdir(exist_ok=True)
+            log.debug("export to %s: removing the earlier export %s", target, earlier)
             for name in earlier:  # only what an earlier export wrote; anything else stays
                 (target / name).unlink(missing_ok=True)
             written, started = [], time.time()
             for n, photo in enumerate(photos, 1):
                 name = self.file_name(project, photo)
                 shutil.copy2(lib.path(photo["id"]), target / name)  # the original, untouched
+                log.debug("copied %s -> %s", lib.files[photo["id"]], name)
                 written.append(name)
                 progress(n, len(photos), f"Copying photos ({n} of {len(photos)})", started)
             (target / PAGE_NAME).write_text(page_html, encoding="utf-8")

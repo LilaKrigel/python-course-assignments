@@ -8,11 +8,14 @@ time, recognising a whole folder takes a fraction of a second.
 The prompts and rules come from the day03 album picker, where they were tuned on the real photos:
 the species is decided by all photos of a group together, and only when the model is confident.
 """
+import logging
 from pathlib import Path
 
 import numpy as np
 
 from .analysis import MODEL_NAME, Clip, normalize
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 APP_DIR = Path(__file__).resolve().parent.parent
 TEXT_CACHE = APP_DIR / "text_embeddings.npz"
@@ -115,13 +118,20 @@ def recognise(embeddings, groups):
                       [text.describe([p]) for p in UNKNOWN_SPECIES_PROMPTS]
     subjects = []
     for ids in groups:
-        category = CATEGORIES[int(category_probs[ids].mean(axis=0).argmax())]
+        mean = category_probs[ids].mean(axis=0)
+        category = CATEGORIES[int(mean.argmax())]
+        shares = ", ".join(f"{c} {p:.2f}" for c, p in zip(CATEGORIES, mean)) if log.isEnabledFor(logging.DEBUG) else ""
         if category != "animals":
+            log.debug("group of photos %s: %s (categories: %s)", ids, category, shares)
             subjects.append(category)
             continue
         animal_ids = [i for i in ids if category_probs[i].argmax() == 0] or ids  # the frames showing animals
         votes = probabilities(embeddings[animal_ids], species_classes).mean(axis=0)
         best = int(votes.argmax())
         known = best < len(names) and votes[best] >= SPECIES_MIN_CONFIDENCE
+        best_name = names[best] if best < len(names) else "an unknown species"
+        log.debug("group of photos %s: animals (categories: %s); species vote of frames %s: %s %.2f "
+                  "(needs %s) -> %s", ids, shares, animal_ids, best_name, votes[best], SPECIES_MIN_CONFIDENCE,
+                  names[best] if known else OTHER_ANIMALS)
         subjects.append(names[best] if known else OTHER_ANIMALS)
     return subjects

@@ -4,6 +4,7 @@ The tests never use real photos or the image model: a Library is built from made
 values, and the "image model" is replaced by a tiny fake whose answers are known. That keeps the
 tests fast (a few seconds) and makes every expected result easy to see.
 """
+import logging
 import sys
 from pathlib import Path
 
@@ -90,6 +91,13 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "real_model: uses the real image model on the photo dataset")
+    # The log of what the app did, printed under a failed test ("Captured log call"): the app's own
+    # debug lines only (studio.*), not those of libraries like Pillow
+    logging.getLogger("studio").setLevel(logging.DEBUG)
+    log.setLevel(logging.DEBUG)
+
+
+log = logging.getLogger("tests")  # what the tests feed into the app
 
 
 def pytest_collection_modifyitems(config, items):
@@ -116,6 +124,11 @@ def make_library(folder, photos):
     data["embedding"] = np.array([p["emb"] for p in photos])
     data["taken"] = np.array([START + p.get("taken", 10 * i) for i, p in enumerate(photos)])
     keys = [f"p{i:02d}.jpg|1000|{i}" for i in range(n)]
+    for i, p in enumerate(photos):
+        changed = {k: v for k, v in p.items() if k not in ("emb", "taken")}
+        contents = [name for name, k in AXES.items() if p["emb"][k] > 0.3]
+        log.debug("test photo p%02d.jpg: shows %s, taken +%gs%s", i, contents, p.get("taken", 10 * i),
+                  f", {changed}" if changed else "")
     return Library(Path(folder), keys, data)
 
 
@@ -144,4 +157,5 @@ def steps():
 def set_groups(project, grouping, groups):
     """Put the photos into these groups (lists of photo ids), as step 1 would."""
     project.step_state("group")["settings"] = {"similarity": 0.9, "seconds": 120}
+    log.debug("test groups (step 1): %s", groups)
     grouping.store(project, groups)

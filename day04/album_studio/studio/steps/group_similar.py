@@ -2,11 +2,14 @@
 
 The first half is the business logic (grouping, hiding bad photos, fixing groups by hand);
 the second half prepares the step's web pages and reads their forms."""
+import logging
 from datetime import datetime
 
 import numpy as np
 
 from .base import Step
+
+log = logging.getLogger(__name__)  # debug lines: shown by the tests when a test fails
 
 DEFAULT_SETTINGS = {"similarity": 0.90, "seconds": 120}  # seconds=None means "any time"
 TIME_OPTIONS = [(30, "30 s"), (120, "2 min"), (600, "10 min"), (3600, "1 hour"), (None, "Any time")]
@@ -37,11 +40,16 @@ def group_photos(embeddings, taken, similarity, max_gap):
             sims[taken[i] - last_time[:n] > max_gap] = -1
             best = int(np.argmax(sims))
             if sims[best] >= similarity:
+                log.debug("photo %d joins group %d (starts with photo %d): %.3f alike (needs %s)",
+                          i, best, groups[best][0], sims[best], similarity)
                 groups[best].append(i)
                 last_time[best] = taken[i]
                 continue
+            log.debug("photo %d starts group %d: the most alike group in time is only %.3f alike (needs %s)",
+                      i, n, sims[best], similarity)
         anchors[n], last_time[n] = emb, taken[i]
         groups.append([i])
+    log.debug("%d photos -> %d groups (similarity %s, max gap %s s)", len(embeddings), len(groups), similarity, max_gap)
     return groups
 
 
@@ -87,9 +95,12 @@ class GroupSimilarStep(Step):
         and photos the user hid by hand. Later steps use this to leave bad photos out of the album too."""
         lib, state = project.library, project.step_state(self.id)
         if not state.get("hide_problems", True):
+            log.debug("hidden: none (the switch is off)")
             return set()
         keep, rejected = set(state.get("keep", [])), set(state.get("rejected", []))
-        return {i for i, f in enumerate(lib.files) if lib.problem(i) and f not in keep or f in rejected}
+        hidden = {i for i, f in enumerate(lib.files) if lib.problem(i) and f not in keep or f in rejected}
+        log.debug("hidden: %s (kept by the user: %s, hidden by the user: %s)", sorted(hidden), sorted(keep), sorted(rejected))
+        return hidden
 
     def get(self, project):
         lib, state = project.library, project.step_state(self.id)
@@ -108,6 +119,7 @@ class GroupSimilarStep(Step):
         }
 
     def action(self, project, name, payload):
+        log.debug("step 1 action %r %s", name, payload)
         groups = self.groups(project) if project.library else []
         state = project.step_state(self.id)
         if name == "hide_problems":  # the "Hide blurry and bad photos" switch
@@ -137,6 +149,7 @@ class GroupSimilarStep(Step):
             return super().action(project, name, payload)
         project.step_state(self.id)["edited"] = True
         self.store(project, groups)
+        log.debug("groups after %r: %s", name, self.groups(project))
         return self.get(project)
 
     # ---------- The web pages ----------
